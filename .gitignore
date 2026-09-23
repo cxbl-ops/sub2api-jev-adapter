@@ -1,0 +1,22 @@
+# Build outputs
+/build/
+/dist/
+*.s2plugin
+
+# Signing material and secrets
+*.private
+*.key
+*.pem
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Go
+coverage.out
+*.test

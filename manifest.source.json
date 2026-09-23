@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "com.cxbl.jev-adapter",
+  "name": "JEV Adapter",
+  "version": "0.1.0",
+  "description": "将 jev-* 模型请求适配到 JEV Decision API；非 JEV OpenAI OAuth 请求透明转发。",
+  "author": "cxbl-ops",
+  "requires": {
+    "sub2api": ">=0.2.7 <0.3.0",
+    "recommended_sub2api_version": "0.2.7",
+    "tested_sub2api_versions": ["0.2.7"],
+    "plugin_protocol": 1,
+    "transport_api": 1,
+    "ui_bridge": 1
+  },
+  "capabilities": [
+    {
+      "id": "openai.oauth.outbound_transport.v1",
+      "platform": "openai",
+      "account_type": "oauth"
+    }
+  ],
+  "runtimes": {},
+  "ui": {"entrypoint": "ui/index.html"},
+  "files": {}
+}

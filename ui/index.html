@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>JEV Adapter 配置</title>
+  <style>
+    :root{color-scheme:light dark;font-family:Inter,system-ui,sans-serif}*{box-sizing:border-box}body{margin:0;padding:24px;background:transparent;color:#111827}.card{max-width:760px;margin:auto;border:1px solid #d1d5db;border-radius:14px;padding:22px;background:#fff;box-shadow:0 1px 3px #00000012}h1{font-size:20px;margin:0 0 8px}.muted{color:#6b7280;font-size:13px;line-height:1.55}.notice{margin:16px 0;padding:12px;border-radius:9px;background:#eff6ff;color:#1e40af;font-size:13px;line-height:1.55}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.full{grid-column:1/-1}label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}input{width:100%;height:40px;border:1px solid #cbd5e1;border-radius:8px;padding:0 11px;background:transparent;color:inherit}input:focus{outline:2px solid #3b82f6;outline-offset:1px}.check{display:flex;align-items:center;gap:8px;font-weight:500}.check input{width:16px;height:16px}.actions{display:flex;gap:10px;margin-top:20px}button{height:40px;border:0;border-radius:8px;padding:0 16px;font-weight:600;cursor:pointer}.primary{background:#2563eb;color:white}.secondary{background:#e5e7eb;color:#111827}button:disabled{opacity:.55;cursor:not-allowed}.status{min-height:22px;margin-top:12px;font-size:13px}.ok{color:#15803d}.error{color:#b91c1c}code{font-family:ui-monospace,monospace;font-size:12px}@media(max-width:640px){body{padding:14px}.grid{grid-template-columns:1fr}.full{grid-column:auto}}@media(prefers-color-scheme:dark){body{color:#e5e7eb}.card{background:#111827;border-color:#374151}.muted{color:#9ca3af}.notice{background:#172554;color:#bfdbfe}.secondary{background:#374151;color:#e5e7eb}input{border-color:#4b5563}}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>JEV Adapter</h1>
+    <p class="muted">仅拦截 <code>jev-*</code> 模型；其他 OpenAI OAuth 请求由插件透明转发。</p>
+    <div class="notice">调用方式：向 <code>/v1/responses</code> 发送 <code>model</code>、<code>state</code>、<code>questions</code>，并设置 <code>stream:false</code>。测试连接会向 JEV 发起一次极小额真实请求。</div>
+    <div class="grid">
+      <div class="full">
+        <label for="apiKey">JEV API Key</label>
+        <input id="apiKey" type="password" autocomplete="off" placeholder="jv_live_…">
+      </div>
+      <div class="full">
+        <label for="baseURL">Base URL</label>
+        <input id="baseURL" type="url" value="https://jevtypesafeai.com">
+      </div>
+      <div>
+        <label for="requestTimeout">请求超时（秒）</label>
+        <input id="requestTimeout" type="number" min="5" max="300" value="120">
+      </div>
+      <div>
+        <label for="headerTimeout">响应头超时（秒）</label>
+        <input id="headerTimeout" type="number" min="5" max="300" value="90">
+      </div>
+      <div>
+        <label for="maxRequest">最大请求体（字节）</label>
+        <input id="maxRequest" type="number" min="1048576" max="268435456" value="67108864">
+      </div>
+      <div>
+        <label for="maxResponse">最大响应体（字节）</label>
+        <input id="maxResponse" type="number" min="1048576" max="67108864" value="16777216">
+      </div>
+      <label class="check full"><input id="useProxy" type="checkbox" checked>JEV 请求沿用被选中 OpenAI OAuth 账号的代理</label>
+    </div>
+    <div class="actions">
+      <button id="save" class="primary">保存配置</button>
+      <button id="test" class="secondary">保存并测试</button>
+    </div>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+  </main>
+  <script>
+    (() => {
+      const token = new URLSearchParams(location.hash.slice(1)).get('bridge_token') || '';
+      const pending = new Map();
+      const $ = (id) => document.getElementById(id);
+      const status = $('status');
+      const setStatus = (text, ok) => { status.textContent = text; status.className = 'status ' + (ok ? 'ok' : 'error'); };
+      const requestID = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random());
+      const send = (type, payload = {}) => new Promise((resolve, reject) => {
+        const id = requestID();
+        const timeout = setTimeout(() => { pending.delete(id); reject(new Error('操作超时')); }, 30000);
+        pending.set(id, { resolve, reject, timeout, type });
+        parent.postMessage({ source:'sub2api-plugin-ui', bridge_token:token, type, request_id:id, ...payload }, '*');
+      });
+      addEventListener('message', (event) => {
+        if (event.source !== parent) return;
+        const message = event.data;
+        if (!message || message.source !== 'sub2api-plugin-host' || message.bridge_token !== token) return;
+        const item = pending.get(message.request_id);
+        if (!item || message.type !== item.type + '.result') return;
+        clearTimeout(item.timeout); pending.delete(message.request_id);
+        if (message.ok) item.resolve(message); else item.reject(new Error(message.error || message.message || '操作失败'));
+      });
+      const readForm = () => ({
+        api_key: $('apiKey').value.trim(), base_url: $('baseURL').value.trim(),
+        request_timeout_seconds: Number($('requestTimeout').value),
+        response_header_timeout_seconds: Number($('headerTimeout').value),
+        max_request_bytes: Number($('maxRequest').value), max_response_bytes: Number($('maxResponse').value),
+        use_account_proxy: $('useProxy').checked,
+      });
+      const fill = (cfg = {}) => {
+        $('apiKey').value = cfg.api_key || '';
+        $('baseURL').value = cfg.base_url || 'https://jevtypesafeai.com';
+        $('requestTimeout').value = cfg.request_timeout_seconds || 120;
+        $('headerTimeout').value = cfg.response_header_timeout_seconds || 90;
+        $('maxRequest').value = cfg.max_request_bytes || 67108864;
+        $('maxResponse').value = cfg.max_response_bytes || 16777216;
+        $('useProxy').checked = cfg.use_account_proxy !== false;
+      };
+      const busy = (value) => { $('save').disabled = value; $('test').disabled = value; };
+      $('save').addEventListener('click', async () => {
+        busy(true); setStatus('正在保存…', true);
+        try { const result = await send('config.save', { config:readForm() }); fill(result.config); setStatus('配置已保存', true); }
+        catch (error) { setStatus(error.message, false); } finally { busy(false); }
+      });
+      $('test').addEventListener('click', async () => {
+        busy(true); setStatus('正在保存并测试（会产生一次极小额调用）…', true);
+        try {
+          const saved = await send('config.save', { config:readForm() }); fill(saved.config);
+          const tested = await send('config.test');
+          setStatus(tested.result?.message || (tested.result?.success ? '测试成功' : '测试失败'), !!tested.result?.success);
+        } catch (error) { setStatus(error.message, false); } finally { busy(false); }
+      });
+      parent.postMessage({ source:'sub2api-plugin-ui', bridge_token:token, type:'sub2api.plugin.ready', request_id:requestID() }, '*');
+      send('config.load').then((result) => { fill(result.config); setStatus('配置已加载', true); }).catch((error) => setStatus(error.message, false));
+      parent.postMessage({ source:'sub2api-plugin-ui', bridge_token:token, type:'ui.resize', request_id:requestID(), height:680 }, '*');
+      addEventListener('beforeunload', () => { for (const item of pending.values()) clearTimeout(item.timeout); pending.clear(); });
+    })();
+  </script>
+</body>
+</html>
